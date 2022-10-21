@@ -32,11 +32,11 @@ public class TcpdumpUnitTests
         // Create a TextReader from the string
         using var reader = new StringReader(testcapture);
 
-        var parser = Lib.TcpDumpParser.ParsePackets(new(@"localhost\.\d+"), reader);
+        var parser = Lib.TcpDumpParser.ParsePackets(Lib.TcpDumpParser.CreateSourceAddressFilter(@"localhost\.\d+"), reader);
 
         var enumerator = parser.GetEnumerator();
         enumerator.MoveNext();
-        var packet = enumerator.Current;
+        var packet = enumerator.Current.Data;
 
         packet.Length.Should().Be(4);
         packet[0].Should().Be((byte)'o');
@@ -45,7 +45,7 @@ public class TcpdumpUnitTests
         packet[3].Should().Be((byte)'\n');
 
         enumerator.MoveNext();
-        packet = enumerator.Current;
+        packet = enumerator.Current.Data;
 
         packet.Length.Should().Be(4);
         packet[0].Should().Be((byte)'t');
@@ -54,7 +54,7 @@ public class TcpdumpUnitTests
         packet[3].Should().Be((byte)'\n');
 
         enumerator.MoveNext();
-        packet = enumerator.Current;
+        packet = enumerator.Current.Data;
 
         packet.Length.Should().Be(6);
         packet[0].Should().Be((byte)'t');
@@ -65,7 +65,7 @@ public class TcpdumpUnitTests
         packet[5].Should().Be((byte)'\n');
 
         enumerator.MoveNext();
-        packet = enumerator.Current;
+        packet = enumerator.Current.Data;
 
         packet.Length.Should().Be(5);
         packet[0].Should().Be((byte)'f');
@@ -80,8 +80,34 @@ public class TcpdumpUnitTests
     {
         // Create a TextReader from the string
         using var reader = new StringReader(testcapture);
-        var parser = Lib.TcpDumpParser.ParsePackets(new(@"zzzzz"), reader);
+        var parser = Lib.TcpDumpParser.ParsePackets(Lib.TcpDumpParser.CreateSourceAddressFilter(@"zzzzz"), reader);
 
         parser.Count().Should().Be(0);
+    }
+
+    [Fact]
+    public void FilterUnionBehaves()
+    {
+        // Given
+        var linedata = new string[]{};
+
+        var one = Lib.TcpDumpParser.FilterUnionAnd(_ => true);
+        one(linedata).Should().BeTrue();
+
+        var onefalse = Lib.TcpDumpParser.FilterUnionAnd(_ => false);    
+        onefalse(linedata).Should().BeFalse();
+
+        var twotrue = Lib.TcpDumpParser.FilterUnionAnd(_ => true, _ => true);
+        twotrue(linedata).Should().BeTrue();
+
+        var twofalse = Lib.TcpDumpParser.FilterUnionAnd(_ => true, _ => false);
+        twofalse(linedata).Should().BeFalse();
+
+        var twotruefalse = Lib.TcpDumpParser.FilterUnionAnd(_ => true, _ => false);
+        twotruefalse(linedata).Should().BeFalse();
+
+        var twotruefalsereversed = Lib.TcpDumpParser.FilterUnionAnd(_ => false, _ => true);
+        twotruefalsereversed(linedata).Should().BeFalse();
+
     }
 }

@@ -26,8 +26,14 @@ namespace Lib;
 
 public class TcpDumpParser
 {
-    // Create an enumerable that will take a ITextReader and emit raw packets
-    public static IEnumerable<byte[]> ParsePackets(System.Text.RegularExpressions.Regex sourceregex, TextReader reader)
+    public delegate bool PacketFilter(string []linedata);
+
+    public record PacketData(byte[] Data, string [] Headers);
+
+    // The PacketFilter given is a way to pre-cull packets that may not be of interest.
+    // The mechanism to parse and acculumate the data can be costly, so if the filter
+    // can eliminate a packet, it should.
+    public static IEnumerable<PacketData> ParsePackets(PacketFilter filter, TextReader reader)
     {
         // While reader still has stuff to read
         while (reader.Peek() != -1)
@@ -37,8 +43,6 @@ public class TcpDumpParser
             if (line is null) { break; }
 
             // It must start with a number/timestamp
-
-
             // If it starts with a number, it's a timestamp
             if (!char.IsDigit(line[0]))
             {
@@ -48,10 +52,11 @@ public class TcpDumpParser
             // Parse the current line
             var linedata = line.Split(' ');
 
-            if (AcceptablePacket(sourceregex, linedata))
+            // Pre-filter to see if we should even bother parsing this packet
+            if (filter(linedata))
             {
                 var message = ReadData(reader);
-                yield return message;
+                yield return new(message,linedata);
             }
             else
             {
@@ -61,7 +66,8 @@ public class TcpDumpParser
         }
     }
 
-    private static bool AcceptablePacket(Regex sourceregex, string[] linedata)
+    // in the form of a packet filter
+    public static bool UDPPacket(string[] linedata)
     {
         var protocol = linedata[5];
         if (protocol != "UDP,")
@@ -69,13 +75,30 @@ public class TcpDumpParser
             return false;
         }
 
-        var source = linedata[2];
-        if (!sourceregex.IsMatch(source))
-        {
-            return false;
-        }
-
         return true;
+    }
+
+    static public PacketFilter FilterUnionAnd(params PacketFilter[] filters)
+    {
+        return (linedata) =>
+        {
+            var onefailed = filters.Any(f => f(linedata) == false);
+            if(onefailed) {
+                return false;
+            } else {
+                return true;
+            }
+        };
+    }
+
+    static public PacketFilter CreateSourceAddressFilter(string regex)
+    {
+        var re = new Regex(regex);
+        return (string[] linedata) =>
+        {
+            var source = linedata[2];
+            return re.IsMatch(source);
+        };
     }
 
     private static byte[] ReadData(TextReader reader)
