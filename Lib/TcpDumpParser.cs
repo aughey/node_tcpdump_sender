@@ -1,4 +1,6 @@
-﻿namespace Lib;
+﻿using System.Text.RegularExpressions;
+
+namespace Lib;
 
 // a sample tcpdump looks like
 // 00:05:45.639941 IP6 localhost.52198 > localhost.12345: UDP, length 4
@@ -25,7 +27,7 @@
 public class TcpDumpParser
 {
     // Create an enumerable that will take a ITextReader and emit raw packets
-    public static IEnumerable<byte[]> ParsePackets(TextReader reader)
+    public static IEnumerable<byte[]> ParsePackets(System.Text.RegularExpressions.Regex sourceregex, TextReader reader)
     {
         // While reader still has stuff to read
         while (reader.Peek() != -1)
@@ -45,16 +47,35 @@ public class TcpDumpParser
 
             // Parse the current line
             var linedata = line.Split(' ');
-            var protocol = linedata[5];
-            if (protocol != "UDP,")
+
+            if (AcceptablePacket(sourceregex, linedata))
+            {
+                var message = ReadData(reader);
+                yield return message;
+            }
+            else
             {
                 EatData(reader);
-                continue;
             }
 
-            var message = ReadData(reader);
-            yield return message;
         }
+    }
+
+    private static bool AcceptablePacket(Regex sourceregex, string[] linedata)
+    {
+        var protocol = linedata[5];
+        if (protocol != "UDP,")
+        {
+            return false;
+        }
+
+        var source = linedata[2];
+        if (!sourceregex.IsMatch(source))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private static byte[] ReadData(TextReader reader)
@@ -64,7 +85,7 @@ public class TcpDumpParser
         // 0x0010:  0000 0000 0000 0001 0000 0000 0000 0000
         // 0x0020:  0000 0000 0000 0001 c370 3039 000e 0021
         // 0x0030:  7468 7265 650a
-        
+
         // While next char is a tab
         List<string> words = new List<string>();
         while (reader.Peek() == '\t')
